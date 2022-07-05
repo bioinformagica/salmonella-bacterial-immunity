@@ -1,0 +1,139 @@
+#+TITLE: Main file
+#+AUTHOR: Hugo Ávila (@bioinformagica)
+#+LANGUAGE: en-us
+#+STARTUP: overview
+#+PROPERTY: header-args :dir ~/projects/salmonella-bacterial-immunity :mkdirp yes :exports none :eval never-export
+
+* ENV setup
+** Snakemake
+#+BEGIN_SRC shell
+# get conda installer
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+
+# Run installer and interactively accept and init the conda executable
+# Atention !!!: this will change your current shell .rc (.zshrc, .bashrc ...)
+bash Miniconda3-latest-Linux-x86_64.sh
+
+# Source the conda changes
+source ~/.bashrc
+
+# Set auto activation of conda base environment to false
+conda config --set auto_activate_base false
+
+# Add channels
+conda config --add channels conda-forge
+conda config --add channels bioconda
+
+# Install mamba
+conda install -n base -c conda-forge mamba -y
+
+# Install Snakemake
+mamba create -c conda-forge -c bioconda -n snakemake snakemake -y
+
+#+END_SRC
+
+#+RESULTS:
+
+* README.md
+#+NAME: cb:README.md
+#+CAPTION: README.md
+#+BEGIN_SRC markdown :tangle README.md
+# Snakemake workflow: `salmonella-bacterial-immunity`
+
+[![Snakemake](https://img.shields.io/badge/snakemake-≥6.3.0-brightgreen.svg)](https://snakemake.github.io)
+
+A Snakemake workflow for `Find new defense systems on Salmonella`.
+#+END_SRC
+** DONE Create README.md
+** TODO Create linter action
+* Snakefile
+:PROPERTIES:
+:COOKIE_DATA: todo recursive
+:header-args: :tangle workflow/Snakefile :mkdirp yes :exports none :eval never-export :comments link
+:END:
+** IMPORTS
+#+BEGIN_SRC snakemake
+import os
+import sys
+import random
+#+END_SRC
+
+** FILE CONFIGS
+#+BEGIN_SRC snakemake
+configfile: 'config/config.yaml'
+#+END_SRC
+
+** FUNCTIONS
+#+BEGIN_SRC snakemake
+get_cores_perc = lambda perc: max(1, workflow.cores * perc)
+join_path = lambda *args: os.path.join(*args)
+#+END_SRC
+
+** GLOBAL VARIABLES
+#+BEGIN_SRC snakemake
+snakefile_path = os.path.dirname(workflow.snakefile)
+results_dir = join_path('results')
+scripts_dir = join_path(snakefile_path, 'scripts')
+
+# Globs
+GENOME_IDS = list(map(lambda x: x.name.replace('_out', ''), filter(lambda x: x.is_dir(), Path(config['prokka_dir']).iterdir())))
+
+# Run only for a sub sample of the input,
+# config['sample_input'] must be a interger value >= 1.
+if isinstance(config['sample_input'], int) and config['sample_input'] >= 1:
+    GENOME_IDS = random.sample(GENOME_IDS, config['sample_input'])
+#+END_SRC
+** MAIN RULE ALL
+#+BEGIN_SRC snakemake
+rule all:
+    input:
+        padloc_out_dir = expand(join_path(results_dir, 'padloc', '{genome_id}'), genome_id=GENOME_IDS),
+        # neighborhood_csv = expand(join_path(results_dir, 'neighborhood', '{genome_id}.csv'), genome_id=GENOME_IDS)
+#+END_SRC
+
+** Include
+#+BEGIN_SRC snakemake
+include:
+    'rules/get_gene_neighborhood.smk'
+#+END_SRC
+
+* Rules
+** Get Gene Neighborhood
+:PROPERTIES:
+:COOKIE_DATA: todo recursive
+:header-args: :tangle workflow/rules/get_gene_neighborhood.smk :mkdirp yes :exports none :eval never-export :comments link
+:END:
+*** Find defense genes with padloc
+#+BEGIN_SRC snakemake
+rule padloc_search_defence_genes:
+    input:
+        gff_file = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_out.gff'),
+        faa_file = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_out.faa')
+    output:
+        padloc_out_dir = directory(join_path(results_dir, 'padloc', '{genome_id}'))
+    params:
+        gff_nofasta_file = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_out_nofasta.gff'),
+    threads:
+        1
+    conda:
+        '../envs/padloc_env.yaml'
+    shell:
+        "sed '/^##FASTA/Q' {input.gff_file} > {params.gff_nofasta_file} && "
+        'mkdir -p {output.padloc_out_dir} && '
+        'padloc --faa {input.faa_file} --gff {params.gff_nofasta_file} --outdir {output.padloc_out_dir} && '
+        'rm -v {params.gff_nofasta_file}'
+#+END_SRC
+***
+
+***
+
+* CONFIGS
+:PROPERTIES:
+:COOKIE_DATA: todo recursive
+:header-args: :tangle config/config.yaml :mkdirp yes :exports none :eval never-export :comments link
+:END:
+#+BEGIN_SRC yaml
+prokka_dir: 'results/Prokka'
+sample_input: 1
+#+END_SRC
+* Notes
