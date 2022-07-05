@@ -8,7 +8,7 @@ def usage() -> None:
 Description:
 
     This script reads a prokka gbk file and prints a faa file with
-    locustags prefixed by the contig name to be used by defencefinder.
+    locustags prefixed by the contig name that they are from.
 
 Usage:
 

@@ -6,46 +6,24 @@ channels:
 dependencies:
   - _libgcc_mutex=0.1=conda_forge
   - _openmp_mutex=4.5=2_gnu
-  - biopython=1.70=np112py36_1
-  - blas=1.1=openblas
   - ca-certificates=2022.6.15=ha878542_0
-  - freetype=2.10.4=h0708190_1
-  - jpeg=9e=h166bdaf_2
-  - lcms2=2.12=hddcbb42_0
   - ld_impl_linux-64=2.36.1=hea4e1c9_2
-  - lerc=3.0=h9c3ff4c_0
-  - libdeflate=1.10=h7f98852_0
   - libffi=3.4.2=h7f98852_5
   - libgcc-ng=12.1.0=h8d9b700_16
-  - libgfortran-ng=7.5.0=h14aa051_20
-  - libgfortran4=7.5.0=h14aa051_20
   - libgomp=12.1.0=h8d9b700_16
   - libnsl=2.0.0=h7f98852_0
-  - libpng=1.6.37=h21135ba_2
   - libstdcxx-ng=12.1.0=ha89aaad_16
-  - libtiff=4.3.0=h0fcbabc_4
-  - libwebp-base=1.2.2=h7f98852_1
   - libzlib=1.2.12=h166bdaf_1
-  - lz4-c=1.9.3=h9c3ff4c_1
-  - mmtf-python=1.1.2=py_0
-  - msgpack-python=1.0.2=py36h605e78d_1
   - ncurses=6.3=h27087fc_1
-  - numpy=1.12.1=py36_blas_openblash1522bff_1001
-  - olefile=0.46=pyh9f0ad1d_1
-  - openblas=0.3.3=h9ac9557_1001
-  - openjpeg=2.4.0=hb52868f_1
-  - openssl=1.1.1p=h166bdaf_0
-  - pillow=8.3.2=py36h676a545_0
-  - pip=21.3.1=pyhd8ed1ab_0
-  - python=3.6.15=hb7a2778_0_cpython
-  - python_abi=3.6=2_cp36m
+  - openssl=3.0.4=h166bdaf_2
+  - pip=22.1.2=pyhd8ed1ab_0
+  - python=3.7.12=hf930737_100_cpython
+  - python_abi=3.7=2_cp37m
   - readline=8.1.2=h0f457ee_0
-  - reportlab=3.5.68=py36h3e18861_0
-  - setuptools=58.0.4=py36h5fab9bb_2
+  - setuptools=63.1.0=py37h89c1867_0
   - sqlite=3.39.0=h4ff8645_0
   - tk=8.6.12=h27826a3_0
   - wheel=0.37.1=pyhd8ed1ab_0
   - xz=5.2.5=h516909a_1
   - zlib=1.2.12=h166bdaf_1
-  - zstd=1.5.2=h8a70e8d_2
 prefix: /home/hugo/miniconda3/envs/defensefinder_env

@@ -56,6 +56,7 @@ A Snakemake workflow for `Find new defense systems on Salmonella`.
 import os
 import sys
 import random
+random.seed(42)
 #+END_SRC
 
 ** FILE CONFIGS
@@ -88,6 +89,7 @@ if isinstance(config['sample_input'], int) and config['sample_input'] >= 1:
 rule all:
     input:
         padloc_out_dir = expand(join_path(results_dir, 'padloc', '{genome_id}'), genome_id=GENOME_IDS),
+        defencefinder_out_dir = expand(join_path(results_dir, 'defencefinder', '{genome_id}'), genome_id=GENOME_IDS),
         # neighborhood_csv = expand(join_path(results_dir, 'neighborhood', '{genome_id}.csv'), genome_id=GENOME_IDS)
 #+END_SRC
 
@@ -105,7 +107,7 @@ include:
 :END:
 *** Find defense genes with padloc
 #+BEGIN_SRC snakemake
-rule padloc_search_defence_genes:
+rule padloc_search_defence_genes    :
     input:
         gff_file = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_out.gff'),
         faa_file = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_out.faa')
@@ -123,9 +125,28 @@ rule padloc_search_defence_genes:
         'padloc --faa {input.faa_file} --gff {params.gff_nofasta_file} --outdir {output.padloc_out_dir} && '
         'rm -v {params.gff_nofasta_file}'
 #+END_SRC
-***
-
-***
+*** Find defense genes with defense finder
+#+BEGIN_SRC snakemake
+rule defencefinder_search_defence_genes:
+    input:
+        gbk_file = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_out.gbk'),
+        format_faa_script = join_path(scripts_dir, 'prefix_prokka_locustag_with_contig_name.py')
+    output:
+        defencefinder_out_dir = directory(join_path(results_dir, 'defencefinder', '{genome_id}'))
+    params:
+        prefixed_faa = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_prefixed.faa'),
+    threads:
+        1
+    conda:
+        '../envs/defensefinder_env.yaml'
+    shell:
+        'python3 {input.format_faa_script} {input.gbk_file} > {params.prefixed_faa} && '
+        'defense-finder run '
+        '--db-type gembase '
+        '--out-dir {output.defencefinder_out_dir} '
+        '--workers {threads} {params.prefixed_faa} && '
+        'rm -v "{params.prefixed_faa}"* '
+#+END_SRC
 
 * CONFIGS
 :PROPERTIES:
