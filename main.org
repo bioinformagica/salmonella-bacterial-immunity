@@ -89,7 +89,7 @@ if isinstance(config['sample_input'], int) and config['sample_input'] >= 1:
 rule all:
     input:
         padloc_out_dir = expand(join_path(results_dir, 'padloc', '{genome_id}'), genome_id=GENOME_IDS),
-        defencefinder_out_dir = expand(join_path(results_dir, 'defencefinder', '{genome_id}'), genome_id=GENOME_IDS),
+        defensefinder_out_dir = expand(join_path(results_dir, 'defensefinder', '{genome_id}'), genome_id=GENOME_IDS),
         # neighborhood_csv = expand(join_path(results_dir, 'neighborhood', '{genome_id}.csv'), genome_id=GENOME_IDS)
 #+END_SRC
 
@@ -107,16 +107,17 @@ include:
 :END:
 *** Find defense genes with padloc
 #+BEGIN_SRC snakemake
-rule padloc_search_defence_genes    :
+rule padloc_search_defense_genes    :
     input:
         gff_file = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_out.gff'),
         faa_file = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_out.faa')
     output:
-        padloc_out_dir = directory(join_path(results_dir, 'padloc', '{genome_id}'))
+        padloc_out_dir = directory(join_path(results_dir, 'padloc', '{genome_id}')),
+        padloc_csv = join_path(results_dir, 'padloc', '{genome_id}', '{genome_id}_out_padloc.csv'),
     params:
         gff_nofasta_file = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_out_nofasta.gff'),
     threads:
-        1
+        get_cores_perc(0.1)
     conda:
         '../envs/padloc_env.yaml'
     shell:
@@ -127,26 +128,26 @@ rule padloc_search_defence_genes    :
 #+END_SRC
 *** Find defense genes with defense finder
 #+BEGIN_SRC snakemake
-rule defencefinder_search_defence_genes:
+rule defensefinder_search_defense_genes:
     input:
-        gbk_file = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_out.gbk'),
-        format_faa_script = join_path(scripts_dir, 'prefix_prokka_locustag_with_contig_name.py')
+        faa_file = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_out.faa'),
     output:
-        defencefinder_out_dir = directory(join_path(results_dir, 'defencefinder', '{genome_id}'))
+        defensefinder_out_dir = directory(join_path(results_dir, 'defensefinder', '{genome_id}')),
+        defensefinder_tsv = join_path(results_dir, 'defensefinder', '{genome_id}', 'defense_finder_genes.tsv'),
     params:
-        prefixed_faa = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_prefixed.faa'),
+        ,**config['params']['defensefinder'],
     threads:
-        1
+        get_cores_perc(0.1)
     conda:
         '../envs/defensefinder_env.yaml'
     shell:
-        'python3 {input.format_faa_script} {input.gbk_file} > {params.prefixed_faa} && '
         'defense-finder run '
-        '--db-type gembase '
-        '--out-dir {output.defencefinder_out_dir} '
-        '--workers {threads} {params.prefixed_faa} && '
-        'rm -v "{params.prefixed_faa}"* '
+        '--db-type {params.db_type} '
+        '--out-dir {output.defensefinder_out_dir} '
+        '--workers {threads} '
+        '{input.faa_file} '
 #+END_SRC
+
 
 * CONFIGS
 :PROPERTIES:
@@ -155,6 +156,11 @@ rule defencefinder_search_defence_genes:
 :END:
 #+BEGIN_SRC yaml
 prokka_dir: 'results/Prokka'
-sample_input: 1
+sample_input: 'no'
+
+params:
+  defensefinder:
+    db_type: 'ordered_replicon'
+
 #+END_SRC
 * Notes

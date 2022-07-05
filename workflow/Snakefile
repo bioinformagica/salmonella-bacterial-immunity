@@ -32,7 +32,7 @@ if isinstance(config['sample_input'], int) and config['sample_input'] >= 1:
 rule all:
     input:
         padloc_out_dir = expand(join_path(results_dir, 'padloc', '{genome_id}'), genome_id=GENOME_IDS),
-        defencefinder_out_dir = expand(join_path(results_dir, 'defencefinder', '{genome_id}'), genome_id=GENOME_IDS),
+        defensefinder_out_dir = expand(join_path(results_dir, 'defensefinder', '{genome_id}'), genome_id=GENOME_IDS),
         # neighborhood_csv = expand(join_path(results_dir, 'neighborhood', '{genome_id}.csv'), genome_id=GENOME_IDS)
 # MAIN RULE ALL:1 ends here
 
