@@ -147,6 +147,32 @@ rule defensefinder_search_defense_genes:
         '--workers {threads} '
         '{input.faa_file} '
 #+END_SRC
+*** Get gene cassettes
+#+BEGIN_SRC snakemake
+rule get_gene_cassettes:
+    input:
+        gbk_file = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_out.gbk'),
+        defensefinder_tsv = join_path(results_dir, 'defensefinder', '{genome_id}', 'defense_finder_genes.tsv'),
+        padloc_csv = join_path(results_dir, 'padloc', '{genome_id}', '{genome_id}_out_padloc.csv'),
+        script = join_path(scripts_dir, 'extract_cassettes.py'),
+    output:
+        gene_cassettes = directory(join_path(results_dir, 'cassettes', 'extracted', '{genome_id}'))
+    params:
+        ,**config['params']['defensefinder'],
+    conda:
+        '../envs/misc_env.yaml'
+    threads:
+        1
+    shell:
+        'python3 {input.script} '
+        '{input}'
+
+
+
+
+
+
+#+END_SRC
 
 
 * CONFIGS
