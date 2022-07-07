@@ -161,17 +161,19 @@ rule get_gene_cassettes:
         merged_padloc_deffind_csv = join_path(results_dir, 'cassettes', 'extracted', '{genome_id}', 'merged_defense_systems_prediction.csv'),
     params:
         ,**config['params']['get_gene_cassettes'],
+        log_dir = join_path(snakefile_path, '..', 'logs'),
     conda:
         '../envs/misc_env.yaml'
     threads:
         1
     shell:
-        'python3 {input.script} '
-        '--gbk_file {input.gbk_file} '
-        '--padloc_table {input.padloc_csv} '
-        '--defensefinder_table {input.defensefinder_tsv} '
-        '--output_path {output.gene_cassettes_dir} '
-        '--n_genes {params.n_genes}'
+       'exec &> >( tee {params.log_dir}/{rule}_{wildcards.genome_id}_$(date +%Y_%m_%d_-_%H_%M_%S).log ) && '
+       'python3 {input.script} '
+       '--gbk_file {input.gbk_file} '
+       '--padloc_table {input.padloc_csv} '
+       '--defensefinder_table {input.defensefinder_tsv} '
+       '--output_path {output.gene_cassettes_dir} '
+       '--n_genes {params.n_genes}'
 #+END_SRC
 
 
@@ -182,7 +184,7 @@ rule get_gene_cassettes:
 :END:
 #+BEGIN_SRC yaml
 prokka_dir: 'results/Prokka'
-sample_input: 1
+sample_input: 'no' # interger (sample_input 1 for testing) or 'no' for all
 
 params:
   defensefinder:

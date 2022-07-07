@@ -1,0 +1,10 @@
+# [[file:../main.org::*CONFIGS][CONFIGS:1]]
+prokka_dir: 'results/Prokka'
+sample_input: 'no' # interger (sample_input 1 for testing) or 'no' for all
+
+params:
+  defensefinder:
+    db_type: 'ordered_replicon'
+  get_gene_cassettes:
+    n_genes: 10 # number of genes to get up and down stream from the interest genes
+# CONFIGS:1 ends here
