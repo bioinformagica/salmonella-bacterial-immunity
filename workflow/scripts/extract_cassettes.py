@@ -40,8 +40,8 @@ def read_defensefinder(file_path: str, separator: str, columns_to_keep: List[str
              .explode('protein_in_syst') \
              .explode('name_of_profiles_in_sys')
 
-    a = temp.iloc[:,[0,1,2]].explode('protein_in_syst').drop_duplicates()
-    b = temp.iloc[:,[0,1,3]].explode('name_of_profiles_in_sys').drop_duplicates()
+    a = temp.iloc[:,[0,1,2]].explode('protein_in_syst').drop_duplicates().reset_index(drop=True)
+    b = temp.iloc[:,[0,1,3]].explode('name_of_profiles_in_sys').drop_duplicates().reset_index(drop=True)
 
     return pd.concat([a, b], axis=1) \
              .iloc[:,[2,5,1]] \
@@ -194,8 +194,7 @@ def main(*args, **kwargs) -> None:
     merged_features_df = pd.concat([padloc_df, defensefinder_df]).reset_index(drop=True)
 
     logger.info('Writing merge csv ...')
-    merged_features_df.to_csv(os.path.join(kwargs['--output_path'], 'merge_defense_systems_prediction.csv'), index=False, sep=',')
-
+    merged_features_df.to_csv(os.path.join(kwargs['--output_path'], 'merged_defense_systems_prediction.csv'), index=False, sep=',')
 
     # Read gbk file
     logger.info('Starting reading the gbk file ...')
