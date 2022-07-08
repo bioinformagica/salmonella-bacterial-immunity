@@ -31,9 +31,7 @@ if isinstance(config['sample_input'], int) and config['sample_input'] >= 1:
 # [[file:../main.org::*MAIN RULE ALL][MAIN RULE ALL:1]]
 rule all:
     input:
-        padloc_out_dir = expand(join_path(results_dir, 'padloc', '{genome_id}'), genome_id=GENOME_IDS),
-        defensefinder_out_dir = expand(join_path(results_dir, 'defensefinder', '{genome_id}'), genome_id=GENOME_IDS),
-        cassettes_faa = expand(join_path(results_dir, 'cassettes', 'extracted', '{genome_id}', 'Cassettes.faa'), genome_id=GENOME_IDS)
+        mmseqs2_tsv = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv'),
 # MAIN RULE ALL:1 ends here
 
 # [[file:../main.org::*Include][Include:1]]

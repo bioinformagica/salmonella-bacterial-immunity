@@ -88,9 +88,7 @@ if isinstance(config['sample_input'], int) and config['sample_input'] >= 1:
 #+BEGIN_SRC snakemake
 rule all:
     input:
-        padloc_out_dir = expand(join_path(results_dir, 'padloc', '{genome_id}'), genome_id=GENOME_IDS),
-        defensefinder_out_dir = expand(join_path(results_dir, 'defensefinder', '{genome_id}'), genome_id=GENOME_IDS),
-        cassettes_faa = expand(join_path(results_dir, 'cassettes', 'extracted', '{genome_id}', 'Cassettes.faa'), genome_id=GENOME_IDS)
+        mmseqs2_tsv = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv'),
 #+END_SRC
 
 ** Include
@@ -133,7 +131,7 @@ rule defensefinder_search_defense_genes:
         faa_file = join_path(config['prokka_dir'], '{genome_id}_out', '{genome_id}_out.faa'),
     output:
         defensefinder_out_dir = directory(join_path(results_dir, 'defensefinder', '{genome_id}')),
-        defensefinder_tsv = join_path(results_dir, 'defensefinder', '{genome_id}', 'defense_finder_genes.tsv'),
+        defensefinder_tsv = join_path(results_dir, 'defensefinder', '{genome_id}', 'defense_finder_systems.tsv'),
     params:
         ,**config['params']['defensefinder'],
     threads:
@@ -175,6 +173,41 @@ rule get_gene_cassettes:
        '--output_path {output.gene_cassettes_dir} '
        '--n_genes {params.n_genes}'
 #+END_SRC
+*** Combine faa files
+#+BEGIN_SRC snakemake
+rule merge_cassette_proteins:
+    input:
+        cassettes_faa = expand(join_path(results_dir, 'cassettes', 'extracted', '{genome_id}', 'Cassettes.faa'), genome_id=GENOME_IDS),
+    output:
+        concatenated_faa_file = join_path(results_dir, 'cassettes', 'clusters', 'merged_cassette_proteins.faa.gz')
+    threads:
+        1
+    shell:
+        'cat {input.cassettes_faa} | gzip > {output.concatenated_faa_file}'
+#+END_SRC
+*** Cluster cassette genes
+#+BEGIN_SRC snakemake
+rule mmseqs2_cluster_proteins:
+    input:
+        concatenated_faa_file = join_path(results_dir, 'cassettes', 'clusters', 'merged_cassette_proteins.faa.gz')
+    output:
+        mmseqs2_rep = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_rep_seq.fasta'),
+        mmseqs2_tsv = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv'),
+    params:
+        ,**config['params']['mmseqs2'],
+        mmseqs2_prefix = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2'),
+        mmseqs2_fasta = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_all_seqs.fasta'),
+        mmseqs2_tmp = join_path(results_dir, 'cassettes', 'clusters', 'tmp'),
+    conda:
+        '../envs/mmseqs2_env.yaml'
+    threads:
+        get_cores_perc(1)
+    shell:
+        'mmseqs easy-cluster {input.concatenated_faa_file} {params.mmseqs2_prefix} '
+        '{params.mmseqs2_tmp} --threads {threads} '
+        '-c {params.min_cov} --min-seq-id {params.min_ide} && rm -v {params.fasta}'
+
+#+END_SRC
 
 
 * CONFIGS
@@ -191,6 +224,9 @@ params:
     db_type: 'ordered_replicon'
   get_gene_cassettes:
     n_genes: 10 # number of genes to get up and down stream from the interest genes
+  mmseqs2:
+    min_cov: 0.8
+    min_ide: 0.5
 
 #+END_SRC
 * Notes

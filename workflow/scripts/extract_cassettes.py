@@ -139,7 +139,7 @@ def extract_cassettes_from_gbk(gbk_file: str, defence_genes_locus_tags: set, n_g
             for protein in contig.features:
                 if protein.locus_tag in i.locus_tags:
                     try:
-                        fasta_records_to_write.append('>Rep_{}:Cassette_{}:{}\n{}'.format(
+                        fasta_records_to_write.append('>Contig_{}:Cassette_{}:{}\n{}\n'.format(
                             contig.id,
                             cassette_counter,
                             protein.locus_tag,
@@ -151,7 +151,7 @@ def extract_cassettes_from_gbk(gbk_file: str, defence_genes_locus_tags: set, n_g
 
     logger.info('Writing cassettes to file {}.'.format(output_file_name))
     with open(output_file_name, 'w') as f:
-        f.write('\n'.join(fasta_records_to_write))
+        f.write(''.join(fasta_records_to_write))
 
 
 

@@ -7,4 +7,7 @@ params:
     db_type: 'ordered_replicon'
   get_gene_cassettes:
     n_genes: 10 # number of genes to get up and down stream from the interest genes
+  mmseqs2:
+    min_cov: 0.8
+    min_ide: 0.5
 # CONFIGS:1 ends here
