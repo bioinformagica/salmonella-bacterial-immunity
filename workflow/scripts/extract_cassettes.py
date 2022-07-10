@@ -48,7 +48,7 @@ def read_defensefinder(file_path: str, separator: str, columns_to_keep: List[str
              .reset_index(drop=True) \
              .rename(columns=dict(zip(columns_to_keep, renamed_names)))
 
-def extract_cassettes_from_gbk(gbk_file: str, defence_genes_locus_tags: set, n_genes: int, output_path: str):
+def extract_cassettes_from_gbk_old(gbk_file: str, defence_genes_locus_tags: set, n_genes: int, output_path: str):
     contig = namedtuple('Contig', 'id features defence_genes')
     protein = namedtuple('Protein', 'locus_tag feature')
     cassette = namedtuple('Cassette', 'locus_tags start end')
@@ -154,6 +154,55 @@ def extract_cassettes_from_gbk(gbk_file: str, defence_genes_locus_tags: set, n_g
         f.write(''.join(fasta_records_to_write))
 
 
+def parser_gbk_file(gbk_file: str) -> list:
+    contig = namedtuple('Contig', 'id features')
+    # Parsing gbk file
+    contigs = []
+    with open(gbk_file) as f:
+        for record in SeqIO.parse(f, 'genbank'):
+            features = []
+            for feature in filter(lambda fet: fet.type == 'CDS', record.features):
+                features.append(feature)
+            contigs.append(contig(record.id, features))
+    return contigs
+
+def get_cassettes_locus_tags(all_loci: str, interest_loci: str, n_genes: int) -> list:
+    cassettes_locus_tags = []
+    for interest_locus in interest_loci:
+        interest_locus_index = all_loci.index(interest_locus)
+        left_loci = all_loci[:interest_locus_index]
+        if len(left_loci) > n_genes:
+            left_loci = all_loci[ interest_locus_index - n_genes : interest_locus_index ]
+        right_loci = all_loci[ interest_locus_index : interest_locus_index + n_genes + 1 ]
+        cassettes_locus_tags.append(left_loci + right_loci)
+    return cassettes_locus_tags
+
+def merge_overlapping_cassettes(cassettes: tuple) -> tuple:
+    get_start_end_from_cassette = lambda cassette: (cassette[0].location.start.position, cassette[-1].location.end.position)
+    is_overlapping = lambda a, b: b[1][0] > a[1][0] and b[1][0] < a[1][1]
+    cassette_ranges = list(enumerate(map(lambda x: get_start_end_from_cassette(x), cassettes)))
+    merged = []
+    for cassette_range in cassette_ranges:
+
+
+    breakpoint()
+
+def extract_cassettes_from_gbk(gbk_file: str, defence_genes_locus_tags: list, n_genes: int, output_path: str):
+    contigs = parser_gbk_file(gbk_file)
+
+    for contig in contigs:
+        contig_locus_tags = tuple(map(lambda fet: fet.qualifiers.get('locus_tag')[0], contig.features))
+        interest_loci = tuple(filter(lambda locus_tag: locus_tag in defence_genes_locus_tags, contig_locus_tags))
+        if not interest_loci:
+            continue
+
+        cassettes_locus_tags = get_cassettes_locus_tags(all_loci=contig_locus_tags, interest_loci=interest_loci, n_genes=n_genes)
+        cassettes = tuple(map(lambda cassette: tuple(filter(lambda fet: fet.qualifiers.get('locus_tag')[0] in cassette, contig.features)), cassettes_locus_tags))
+        cassettes = merge_overlapping_cassettes(cassettes)
+        breakpoint()
+
+
+
 
 
 def main(*args, **kwargs) -> None:
@@ -200,7 +249,7 @@ def main(*args, **kwargs) -> None:
     logger.info('Starting reading the gbk file ...')
     extract_cassettes_from_gbk(
         gbk_file=kwargs['--gbk_file'],
-        defence_genes_locus_tags=set(merged_features_df.locus_tags),
+        defence_genes_locus_tags=sorted(merged_features_df.locus_tags.unique().tolist(), key=lambda x: int(x.split('_')[1])), # this must be sorted
         n_genes=int(kwargs['--n_genes']),
         output_path=kwargs['--output_path'],
     )
