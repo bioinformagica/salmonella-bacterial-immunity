@@ -31,7 +31,7 @@ if isinstance(config['sample_input'], int) and config['sample_input'] >= 1:
 # [[file:../main.org::*MAIN RULE ALL][MAIN RULE ALL:1]]
 rule all:
     input:
-        mmseqs2_tsv = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv'),
+        mmseqs2_tsv_gz = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv.gz'),
 # MAIN RULE ALL:1 ends here
 
 # [[file:../main.org::*Include][Include:1]]

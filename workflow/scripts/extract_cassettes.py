@@ -117,6 +117,7 @@ def merge_overlapping_cassettes(cassettes: tuple) -> tuple:
 
 def extract_cassettes_from_gbk(gbk_file: str, defence_genes_locus_tags: list, n_genes: int, output_path: str):
     contigs = parser_gbk_file(gbk_file)
+    strand = { -1 : '-', 1 : '+' }
 
     records = []
     for contig in contigs:
@@ -138,10 +139,11 @@ def extract_cassettes_from_gbk(gbk_file: str, defence_genes_locus_tags: list, n_
                 locus_tag = feature.qualifiers.get('locus_tag')[0]
                 if translation:
                     records.append(
-                        '>Contig_{}:Cassette_{}:GOI_{}:{}\n{}\n'.format(
+                        '>Contig_{}:Cassette_{}:GOI_{}:Strand_{}:{}\n{}\n'.format(
                             contig.id,
                             cassette_counter,
                             str(locus_tag in defence_genes_locus_tags),
+                            strand[feature.strand],
                             locus_tag,
                             translation,
                         )

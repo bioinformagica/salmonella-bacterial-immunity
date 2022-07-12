@@ -88,7 +88,7 @@ if isinstance(config['sample_input'], int) and config['sample_input'] >= 1:
 #+BEGIN_SRC snakemake
 rule all:
     input:
-        mmseqs2_tsv = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv'),
+        mmseqs2_tsv_gz = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv.gz'),
 #+END_SRC
 
 ** Include
@@ -155,11 +155,13 @@ rule get_gene_cassettes:
         script = join_path(scripts_dir, 'extract_cassettes.py'),
     output:
         gene_cassettes_dir = directory(join_path(results_dir, 'cassettes', 'extracted', '{genome_id}')),
-        cassettes_faa = join_path(results_dir, 'cassettes', 'extracted', '{genome_id}', 'Cassettes.faa'),
-        merged_padloc_deffind_csv = join_path(results_dir, 'cassettes', 'extracted', '{genome_id}', 'merged_defense_systems_prediction.csv'),
+        cassettes_faa_gz = join_path(results_dir, 'cassettes', 'extracted', '{genome_id}', 'Cassettes.faa.gz'),
+        merged_padloc_deffind_csv_gz = join_path(results_dir, 'cassettes', 'extracted', '{genome_id}', 'merged_defense_systems_prediction.csv.gz'),
     params:
         ,**config['params']['get_gene_cassettes'],
         log_dir = join_path(snakefile_path, '..', 'logs'),
+        cassettes_faa = join_path(results_dir, 'cassettes', 'extracted', '{genome_id}', 'Cassettes.faa'),
+        merged_padloc_deffind_csv = join_path(results_dir, 'cassettes', 'extracted', '{genome_id}', 'merged_defense_systems_prediction.csv'),
     conda:
         '../envs/misc_env.yaml'
     threads:
@@ -171,19 +173,20 @@ rule get_gene_cassettes:
        '--padloc_table {input.padloc_csv} '
        '--defensefinder_table {input.defensefinder_tsv} '
        '--output_path {output.gene_cassettes_dir} '
-       '--n_genes {params.n_genes}'
+       '--n_genes {params.n_genes} && '
+       'gzip -v {params.cassettes_faa} {params.merged_padloc_deffind_csv}'
 #+END_SRC
 *** Combine faa files
 #+BEGIN_SRC snakemake
 rule merge_cassette_proteins:
     input:
-        cassettes_faa = expand(join_path(results_dir, 'cassettes', 'extracted', '{genome_id}', 'Cassettes.faa'), genome_id=GENOME_IDS),
+        cassettes_faa = expand(join_path(results_dir, 'cassettes', 'extracted', '{genome_id}', 'Cassettes.faa.gz'), genome_id=GENOME_IDS),
     output:
         concatenated_faa_file = join_path(results_dir, 'cassettes', 'clusters', 'merged_cassette_proteins.faa.gz')
     threads:
         1
     shell:
-        'cat {input.cassettes_faa} | gzip > {output.concatenated_faa_file}'
+        'zcat {input.cassettes_faa} > {output.concatenated_faa_file}'
 #+END_SRC
 *** Cluster cassette genes
 #+BEGIN_SRC snakemake
@@ -191,13 +194,15 @@ rule mmseqs2_cluster_proteins:
     input:
         concatenated_faa_file = join_path(results_dir, 'cassettes', 'clusters', 'merged_cassette_proteins.faa.gz')
     output:
-        mmseqs2_rep = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_rep_seq.fasta'),
-        mmseqs2_tsv = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv'),
+        mmseqs2_rep_gz = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_rep_seq.fasta.gz'),
+        mmseqs2_tsv_gz = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv.gz'),
     params:
         ,**config['params']['mmseqs2'],
         mmseqs2_prefix = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2'),
         mmseqs2_fasta = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_all_seqs.fasta'),
         mmseqs2_tmp = join_path(results_dir, 'cassettes', 'clusters', 'tmp'),
+        mmseqs2_rep = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_rep_seq.fasta'),
+        mmseqs2_tsv = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv'),
     conda:
         '../envs/mmseqs2_env.yaml'
     threads:
@@ -205,23 +210,25 @@ rule mmseqs2_cluster_proteins:
     shell:
         'mmseqs easy-cluster {input.concatenated_faa_file} {params.mmseqs2_prefix} '
         '{params.mmseqs2_tmp} --threads {threads} '
-        '-c {params.min_cov} --min-seq-id {params.min_ide} && rm -v {params.fasta}'
+        '-c {params.min_cov} --min-seq-id {params.min_ide} && '
+        'gzip -v {params.mmseqs2_rep} {params.mmseqs2_tsv} && '
+        'rm -rfv {params.mmseqs2_fasta} {params.mmseqs2_tmp}'
 
 #+END_SRC
 *** Create network dataframes
 #+BEGIN_SRC snakemake
-rule create_network_dataframes:
-    input:
-        concatenated_faa_file = join_path(results_dir, 'cassettes', 'clusters', 'merged_cassette_proteins.faa.gz'),
-        mmseqs2_tsv = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv'),
-        get_network_scrip =
-    output:
-    params:
-    conda:
-        '../envs/mmseqs2_env.yaml'
-    threads:
-        get_cores_perc(1)
-    shell:
+# rule create_network_dataframes:
+#     input:
+#         concatenated_faa_file = join_path(results_dir, 'cassettes', 'clusters', 'merged_cassette_proteins.faa.gz'),
+#         mmseqs2_tsv = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv'),
+#         get_network_scrip =
+#     output:
+#     params:
+#     conda:
+#         '../envs/mmseqs2_env.yaml'
+#     threads:
+#         get_cores_perc(1)
+#     shell:
 #+END_SRC
 
 
