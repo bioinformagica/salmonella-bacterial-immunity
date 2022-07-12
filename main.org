@@ -208,6 +208,21 @@ rule mmseqs2_cluster_proteins:
         '-c {params.min_cov} --min-seq-id {params.min_ide} && rm -v {params.fasta}'
 
 #+END_SRC
+*** Create network dataframes
+#+BEGIN_SRC snakemake
+rule create_network_dataframes:
+    input:
+        concatenated_faa_file = join_path(results_dir, 'cassettes', 'clusters', 'merged_cassette_proteins.faa.gz'),
+        mmseqs2_tsv = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv'),
+        get_network_scrip =
+    output:
+    params:
+    conda:
+        '../envs/mmseqs2_env.yaml'
+    threads:
+        get_cores_perc(1)
+    shell:
+#+END_SRC
 
 
 * CONFIGS
