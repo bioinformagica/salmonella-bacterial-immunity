@@ -26,16 +26,15 @@ logger = logging.getLogger(Path(__file__).stem)
 from docopt import docopt
 import pandas as pd
 
-def prodigal_csv_to_df(file_path: str):
-    check_prodigal_record = lambda record: re.match('^[\d\w]+\.[\d\w]+\_\d+\_\d+\;\d+\;\d+\;\-?\d\;ID\=\d+\_\d+$', record)
-    with open(file_path) as f:
-        columns = ('locus_tag', 'start', 'end', 'strand', 'id')
-        return pd.DataFrame(data=map(lambda x: x.replace('ID=', '').split(';'), filter(check_prodigal_record, f.read().splitlines())), columns=columns) \
-                .assign(genome_id = lambda df: df.locus_tag.str.split('_', expand=True).iloc[:, 0] )
+def prodigal_csv_to_df(records: tuple):
+    columns = ('locus_tag', 'start', 'end', 'strand', 'id')
+    return (pd.DataFrame(data=records, columns=columns)
+             .assign(id = lambda df: df.id.str.replace('ID=', ''))
+             .assign(genome_id = lambda df: df.locus_tag.str.split('_', expand=True).iloc[:, 0] ))
 
 def run_gnufind(query_dir, match_string, ftype='f'):
     cmd = [
-        'find',
+        'find', '-L',
         query_dir,
         '-type', ftype,
         '-name', match_string
@@ -84,7 +83,6 @@ def main(**kwargs):
         with open(defensefinder_files_cache, 'w') as f:
             f.write('\n'.join(defensefinder_files))
 
-
     if padloc_files_cache.exists():
         logger.info('Defensefinder cache exists reading it ...')
         with open(padloc_files_cache) as f:
@@ -94,8 +92,6 @@ def main(**kwargs):
         padloc_files = run_gnufind(kwargs['--padloc_dir'], '*.fasta_padloc.csv')
         with open(padloc_files_cache, 'w') as f:
             f.write('\n'.join(padloc_files))
-
-    sys.exit(1)
 
     defensefinder_map = get_defensefinder_df(defensefinder_files) \
         .reset_index(drop=True) \
@@ -120,9 +116,28 @@ def main(**kwargs):
         .set_index('locus_tag', drop=True).annotation.to_dict()
 
     logger.info('Reading prodigal headers ...')
-    prodigal_csv_to_df(kwargs['--prodigal_headers_csv']) \
-        .assign(prediction = lambda df: df.locus_tag.apply(lambda locus_tag: ';'.join(map(lambda prediction_map: prediction_map.get(locus_tag, 'NA'), (padloc_map, defensefinder_map))))) \
-        .query('prediction != "NA;NA"').to_csv(kwargs['--output'], sep=';', index=False)
+
+    records_cache = Path(kwargs['--output']).absolute().parent / 'records_prodigal_cache.txt'
+
+    if records_cache.exists():
+        logger.info('Records_Prodigal cache exists reading it ...')
+        with open(records_cache) as f:
+            records = tuple(map(lambda x: tuple(x.split(';')), f.read().splitlines()))
+    else:
+        logger.info('Records_Prodigal cache  do not exists creating ...')
+        records = []
+        check_prodigal_record = lambda record: re.match('^[\d\w]+\.[\d\w]+\_\d+\_\d+\;\d+\;\d+\;\-?\d\;ID\=\d+\_\d+$', record)
+        with open(kwargs['--prodigal_headers_csv']) as f:
+            for line in f:
+                splitted = line.strip().split(';')
+                if any(map(lambda loci_dir: loci_dir.get(splitted[0]), [defensefinder_map, padloc_map])) and check_prodigal_record(line):
+                    records.append(tuple(splitted))
+        with open(records_cache, 'w') as o:
+            o.write('\n'.join(tuple(map(lambda x: ';'.join(x), records))))
+
+    (prodigal_csv_to_df(records)
+     .assign(prediction = lambda df: df.locus_tag.apply(lambda locus_tag: ';'.join(map(lambda prediction_map: prediction_map.get(locus_tag, 'NA'), (padloc_map, defensefinder_map)))))
+     .query('prediction != "NA;NA"').to_csv(kwargs['--output'], sep=';', index=False))
 
     logger.info('All finished !')
 
