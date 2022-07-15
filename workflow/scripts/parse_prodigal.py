@@ -15,6 +15,7 @@ Options:
 
 # Native modules
 from pathlib import Path
+import sys
 import re
 import subprocess
 import itertools
@@ -42,7 +43,7 @@ def run_gnufind(query_dir, match_string, ftype='f'):
     found_files = subprocess.run(cmd, check=True, stdout=subprocess.PIPE).stdout.decode('UTF-8').splitlines()
     assert found_files, 'No files found ! Dir {} with prefix {}.'.format(query_dir, match_string)
     logger.info('Found {} in dir {} with pattern {}.'.format(len(found_files), query_dir, match_string))
-    return found_files
+    return tuple(map(lambda x: str(Path(x).absolute()), found_files))
 
 def get_defensefinder_df(defensefinder_output_files):
     return pd.concat(map(lambda tsv: pd.read_csv(tsv, sep='\t'), defensefinder_output_files)) \
@@ -70,7 +71,33 @@ def main(**kwargs):
 
     logger.info('Reading defensefinder tables ...')
 
-    defensefinder_map = get_defensefinder_df(run_gnufind(kwargs['--defensefinder_dir'], '*defense_finder_systems.tsv')) \
+    defensefinder_files_cache = Path(kwargs['--output']).absolute().parent / 'defensefinder_tables_paths.txt'
+    padloc_files_cache = Path(kwargs['--output']).absolute().parent / 'padloc_tables_paths.txt'
+
+    if defensefinder_files_cache.exists():
+        logger.info('Defensefinder cache exists reading it ...')
+        with open(defensefinder_files_cache) as f:
+            defensefinder_files = f.read().splitlines()
+    else:
+        logger.info('Defensefinder cache  do not exists creating ...')
+        defensefinder_files = run_gnufind(kwargs['--defensefinder_dir'], '*defense_finder_systems.tsv')
+        with open(defensefinder_files_cache, 'w') as f:
+            f.write('\n'.join(defensefinder_files))
+
+
+    if padloc_files_cache.exists():
+        logger.info('Defensefinder cache exists reading it ...')
+        with open(padloc_files_cache) as f:
+            padloc_files = f.read().splitlines()
+    else:
+        logger.info('Defensefinder cache  do not exists creating ...')
+        padloc_files = run_gnufind(kwargs['--padloc_dir'], '*.fasta_padloc.csv')
+        with open(padloc_files_cache, 'w') as f:
+            f.write('\n'.join(padloc_files))
+
+    sys.exit(1)
+
+    defensefinder_map = get_defensefinder_df(defensefinder_files) \
         .reset_index(drop=True) \
         .rename(columns=dict(zip(['protein_in_syst', 'name_of_profiles_in_sys', 'type'], ['locus_tag', 'name', 'system']))) \
         .groupby('locus_tag', as_index=False) \
@@ -83,7 +110,7 @@ def main(**kwargs):
 
     logger.info('Reading padloc tables ...')
 
-    padloc_map = get_padloc_df(run_gnufind(kwargs['--padloc_dir'], '*.fasta_padloc.csv')).loc[:,['target.name', 'protein.name','system']] \
+    padloc_map = get_padloc_df(padloc_files).loc[:,['target.name', 'protein.name','system']] \
         .rename(columns=dict(zip(['target.name', 'protein.name','system'], ['locus_tag', 'name', 'system']))) \
         .groupby('locus_tag', as_index=False) \
         .apply(lambda df: df.head(1)) \
