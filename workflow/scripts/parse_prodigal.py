@@ -68,7 +68,6 @@ def main(**kwargs):
 
     logger.info('ARGS: {}'.format(kwargs))
 
-    logger.info('Reading defensefinder tables ...')
 
     defensefinder_files_cache = Path(kwargs['--output']).absolute().parent / 'defensefinder_tables_paths.txt'
     padloc_files_cache = Path(kwargs['--output']).absolute().parent / 'padloc_tables_paths.txt'
@@ -78,20 +77,22 @@ def main(**kwargs):
         with open(defensefinder_files_cache) as f:
             defensefinder_files = f.read().splitlines()
     else:
-        logger.info('Defensefinder cache  do not exists creating ...')
+        logger.info('Defensefinder cache do not exists creating ...')
         defensefinder_files = run_gnufind(kwargs['--defensefinder_dir'], '*defense_finder_systems.tsv')
         with open(defensefinder_files_cache, 'w') as f:
             f.write('\n'.join(defensefinder_files))
 
     if padloc_files_cache.exists():
-        logger.info('Defensefinder cache exists reading it ...')
+        logger.info('Padloc cache exists reading it ...')
         with open(padloc_files_cache) as f:
             padloc_files = f.read().splitlines()
     else:
-        logger.info('Defensefinder cache  do not exists creating ...')
+        logger.info('Padloc cache do not exists creating ...')
         padloc_files = run_gnufind(kwargs['--padloc_dir'], '*.fasta_padloc.csv')
         with open(padloc_files_cache, 'w') as f:
             f.write('\n'.join(padloc_files))
+
+    logger.info('Reading defensefinder tables ...')
 
     defensefinder_map = get_defensefinder_df(defensefinder_files) \
         .reset_index(drop=True) \
@@ -114,6 +115,10 @@ def main(**kwargs):
         .assign(annotation = lambda df: 'padloc:' + df['annotation']) \
         .drop(['name', 'system'], axis=1) \
         .set_index('locus_tag', drop=True).annotation.to_dict()
+
+    logger.info('Caching dirs ...')
+
+
 
     logger.info('Reading prodigal headers ...')
 

@@ -200,9 +200,20 @@ def main(*args, **kwargs) -> None:
     logger.info('ARGS: {}'.format(kwargs))
 
     logger.info('Listing prokka gbk files ...')
+    gbk_file_cache = Path(kwargs['--prokka_dir']).absolute().parent / 'prokka_dir_cache.txt'
+    if gbk_file_cache.exists():
+        logger.info('prokka_dir cache exists, reading it ...')
+        with open(gbk_file_cache) as f:
+            gbk_files_list = f.read().splitlines()
+    else:
+        logger.info('prokka_dir cache do not exists, creating it ...')
+        gbk_files_list = run_gnufind(kwargs['--prokka_dir'], '*_out.gbk' )
+        with open(gbk_file_cache, 'w') as o:
+            o.write('\n'.join(gbk_files_list))
+
     gbk_files: dict = dict(tuple(map(
         lambda file_obj: (file_obj.parent.name.replace('_out', ''), str(file_obj)),
-        map(lambda file_path: Path(file_path), run_gnufind(kwargs['--prokka_dir'], '*.gbk' ))
+        map(lambda file_path: Path(file_path), gbk_files_list)
     )))
 
     logger.info('Reading prodigal GOIs ...')
