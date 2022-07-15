@@ -31,7 +31,10 @@ if isinstance(config['sample_input'], int) and config['sample_input'] >= 1:
 # [[file:../main.org::*MAIN RULE ALL][MAIN RULE ALL:1]]
 rule all:
     input:
-        mmseqs2_tsv_gz = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv.gz'),
+        finish_signal = join_path(results_dir, 'finish_signal_cassette_extraction.txt')
+        # prodigal_with_GOIs = join_path(results_dir, 'prodigal_with_GOIs.csv')
+        # defensefinder_tsv = expand(join_path(results_dir, 'defensefinder', '{genome_id}', 'defense_finder_systems.tsv'), genome_id=GENOME_IDS),
+        # mmseqs2_tsv_gz = join_path(results_dir, 'cassettes', 'clusters', 'mmseqs2_cluster.tsv.gz'),
 # MAIN RULE ALL:1 ends here
 
 # [[file:../main.org::*Include][Include:1]]

@@ -4,17 +4,19 @@ Extract cassettes from prokka gbk files with the
 Padloc and DefesenFinder output files.
 
 Usage:
-    extract_cassettes.py ( --gbk_file=PATH ) ( --padloc_table=PATH ) ( --defensefinder_table=PATH )
-                         ( --output_path=PATH ) [ --n_genes=INT ]
+    extract_cassettes.py ( --prokka_dir=PATH ) ( --prodigal_gois=PATH )
+                         [ --logfile=PATH ] [ --n_genes=INT ]
+                         [ --sample_input=INT ] [ --threads=INT ]
 
 Options:
-    --gbk_file=PATH             Path to the prokka gbk file.
-    --padloc_table=PATH         Output padloc table.
-    --defensefinder_table=PATH  Output defensefinder table.
-    --output_path=PATH          Path to write the output files.
+    --prokka_dir=PATH           Path to the prokka gbk files.
+    --prodigal_gois=PATH        Table with prodigal GOIs.
+    --logfile=PATH              Path to store log [default: ./extract_cassettes.log].
     --n_genes=INT               Number of genes to get from up and down stream
                                 of the interest genes a n_gene = 10 will generate
                                 cassettes with 21 genes [default: 10].
+    --sample_input=INT          Only run max N genome cassette extration.
+    --threads=INT               Numbers of threads to use [default: 1].
 """
 import os
 import sys
@@ -22,32 +24,30 @@ from pathlib import Path
 from typing import List
 from collections import namedtuple
 import itertools
+import subprocess
+from multiprocessing import Pool
+from functools import partial
+import random
+random.seed(42)
+import gzip
 import logging
 logger = logging.getLogger(os.path.basename(__file__).replace('.py', ''))
 from docopt import docopt
 import pandas as pd
 from Bio import SeqIO
+from tqdm import tqdm
 
-def read_padloc(file_path: str, separator: str, columns_to_keep: List[str], renamed_names: List[str]):
-    return pd.read_csv(file_path, sep=separator) \
-             .loc[:, columns_to_keep] \
-             .rename(columns=dict(zip(columns_to_keep, renamed_names)))
-
-def read_defensefinder(file_path: str, separator: str, columns_to_keep: List[str], renamed_names: List[str]):
-    df = pd.read_csv(file_path, sep=separator)
-
-    temp = df.iloc[:, [1,2,5,7]] \
-             .assign(protein_in_syst=df['protein_in_syst'].str.split(','), name_of_profiles_in_sys=df['name_of_profiles_in_sys'].str.split(',')) \
-             .explode('protein_in_syst') \
-             .explode('name_of_profiles_in_sys')
-
-    a = temp.iloc[:,[0,1,2]].explode('protein_in_syst').drop_duplicates().reset_index(drop=True)
-    b = temp.iloc[:,[0,1,3]].explode('name_of_profiles_in_sys').drop_duplicates().reset_index(drop=True)
-
-    return pd.concat([a, b], axis=1) \
-             .iloc[:,[2,5,1]] \
-             .reset_index(drop=True) \
-             .rename(columns=dict(zip(columns_to_keep, renamed_names)))
+def run_gnufind(query_dir, match_string, ftype='f'):
+    cmd = [
+        'find',
+        query_dir,
+        '-type', ftype,
+        '-name', match_string
+    ]
+    found_files = subprocess.run(cmd, check=True, stdout=subprocess.PIPE).stdout.decode('UTF-8').splitlines()
+    assert found_files, 'No files found ! Dir {} with prefix {}.'.format(query_dir, match_string)
+    logger.info('Found {} in dir {} with pattern {}.'.format(len(found_files), query_dir, match_string))
+    return found_files
 
 
 def parser_gbk_file(gbk_file: str) -> list:
@@ -115,22 +115,50 @@ def merge_overlapping_cassettes(cassettes: tuple) -> tuple:
 
     return merged_cassettes
 
-def extract_cassettes_from_gbk(gbk_file: str, defence_genes_locus_tags: list, n_genes: int, output_path: str):
-    contigs = parser_gbk_file(gbk_file)
+def check_cds_overlap(feature, coord):
+    feature_start = feature.location.start.position
+    feature_end = feature.location.end.position
+    feature_strand = feature.location.strand
+    return max(feature_start, coord[0]) < min(feature_end, coord[1]) and feature_strand == coord[2]
+
+
+def extract_cassettes_from_gbk(gbk_file: str, prodigal_gois_df, n_genes: int, no_clobber=True):
+    logger.info('Starting extraction from file: {}.'.format(gbk_file))
+
+    output_file_name = gbk_file.replace('.gbk', '.cassettes.faa.gz')
+    if Path(output_file_name).exists():
+        logger.info('File already exists, skiping: {}.'.format(output_file_name))
+        return
+
+
+    goi = namedtuple('Goi', 'prediction feature')
+    wanted_contigs = prodigal_gois_df.contig_id.unique().tolist()
+    contigs = dict(map(lambda contig: (contig.id, contig), tuple(filter(lambda contig: contig.id in wanted_contigs, parser_gbk_file(gbk_file)))))
     strand = { -1 : '-', 1 : '+' }
-
     records = []
-    for contig in contigs:
-        contig_locus_tags = tuple(map(lambda fet: fet.qualifiers.get('locus_tag')[0], contig.features))
-        interest_loci = tuple(filter(lambda locus_tag: locus_tag in defence_genes_locus_tags, contig_locus_tags))
-        if not interest_loci:
-            continue
 
-        cassettes_locus_tags = get_cassettes_locus_tags(all_loci=contig_locus_tags, interest_loci=interest_loci, n_genes=n_genes)
-        cassettes = tuple(map(lambda cassette: tuple(filter(lambda fet: fet.qualifiers.get('locus_tag')[0] in cassette, contig.features)), cassettes_locus_tags))
+    # Merging PRODIGAL and prokka annotation
+    for contig, df in sorted(prodigal_gois_df.groupby('contig_id'), key=lambda tup: int(tup[0].split('_')[-1])):
+        gois = []
+        prodigal_GOI_cds_coords = df.loc[:,['start', 'end', 'strand', 'prediction']].values.tolist()
+        for feature in contigs[contig].features:
+            if not prodigal_GOI_cds_coords:
+                break
+            for idx, coord in enumerate(prodigal_GOI_cds_coords):
+                if check_cds_overlap(feature, coord):
+                    gois.append(goi(coord[-1], feature))
+                    _ = prodigal_GOI_cds_coords.pop(idx)
+                    break
+
+        all_loci = tuple(map(lambda feature: feature.qualifiers.get('locus_tag')[0], contigs[contig].features))
+        goi_loci = tuple(map(lambda goi: goi.feature.qualifiers.get('locus_tag')[0], gois))
+        cassettes_locus_tags = get_cassettes_locus_tags(all_loci=all_loci, interest_loci=goi_loci, n_genes=n_genes)
+
+
+        cassettes = tuple(map(lambda cassette: tuple(filter(lambda fet: fet.qualifiers.get('locus_tag')[0] in cassette, contigs[contig].features)), cassettes_locus_tags))
         cassettes = merge_overlapping_cassettes(cassettes)
 
-        logger.info('Contig {} have {} cassette(s).'.format(contig.id, len(cassettes)))
+        logger.info('Contig {} have {} cassette(s).'.format(contigs[contig].id, len(cassettes)))
 
         cassette_counter = 1
         for cassette in cassettes:
@@ -140,9 +168,9 @@ def extract_cassettes_from_gbk(gbk_file: str, defence_genes_locus_tags: list, n_
                 if translation:
                     records.append(
                         '>Contig_{}:Cassette_{}:GOI_{}:Strand_{}:{}\n{}\n'.format(
-                            contig.id,
+                            contigs[contig].id,
                             cassette_counter,
-                            str(locus_tag in defence_genes_locus_tags),
+                            str(locus_tag in goi_loci),
                             strand[feature.strand],
                             locus_tag,
                             translation,
@@ -150,10 +178,10 @@ def extract_cassettes_from_gbk(gbk_file: str, defence_genes_locus_tags: list, n_
                     )
             cassette_counter += 1
 
-    output_file_name = os.path.join(output_path, 'Cassettes.faa')
-    logger.info('Writing cassettes to file {}.'.format(output_file_name))
-    with open(output_file_name, 'w') as f:
-        f.write(''.join(records))
+    with gzip.open(output_file_name, 'wb') as f:
+        f.write(''.join(records).encode())
+
+    logger.info('Finished extraction: {}.'.format(output_file_name))
 
 
 
@@ -164,54 +192,37 @@ def main(*args, **kwargs) -> None:
         datefmt="%Y-%m-%d %H:%M",
         format="[%(name)s][%(asctime)s][%(levelname)s] %(message)s",
         handlers=[
-            logging.StreamHandler(),
+            logging.FileHandler(kwargs['--logfile']),
+            # logging.StreamHandler(),
         ]
     )
 
     logger.info('ARGS: {}'.format(kwargs))
 
+    logger.info('Listing prokka gbk files ...')
+    gbk_files: dict = dict(tuple(map(
+        lambda file_obj: (file_obj.parent.name.replace('_out', ''), str(file_obj)),
+        map(lambda file_path: Path(file_path), run_gnufind(kwargs['--prokka_dir'], '*.gbk' ))
+    )))
 
-    merged_format = ['locus_tags', 'names', 'systems']
+    logger.info('Reading prodigal GOIs ...')
+    prodigal_GOIs_df = (pd.read_csv(kwargs['--prodigal_gois'], sep=';', dtype={'genome_id': str})
+                         .groupby('genome_id').filter(lambda df: bool(gbk_files.get(df.name)))
+                         .assign(contig_id = lambda df: df.locus_tag.str.split('_').apply(lambda x: '_'.join(x[:2])) ))
 
-    logger.info('Reading padloc table ...')
-    # Reading feature tables
-    padloc_df = read_padloc(
-        file_path=kwargs['--padloc_table'],
-        separator=',',
-        columns_to_keep=['target.name', 'protein.name', 'system'],
-        renamed_names=merged_format,
-    ).assign(tool = 'padloc')
 
-    logger.info('Reading defensefinder table ...')
-    defensefinder_df = read_defensefinder(
-        file_path=kwargs['--defensefinder_table'],
-        separator='\t',
-        columns_to_keep=['protein_in_syst', 'name_of_profiles_in_sys', 'subtype'],
-        renamed_names=merged_format,
-    ).assign(tool = 'defensefinder')
+    extract_cassettes_from_gbk_part = partial(extract_cassettes_from_gbk, n_genes=int(kwargs['--n_genes']))
 
-    logger.info('Merging tables ...')
-    # Joining results
-    merged_features_df = pd.concat([padloc_df, defensefinder_df]).reset_index(drop=True)
+    jobs = tuple(map(lambda tup: (gbk_files[tup[0]], tup[1]), prodigal_GOIs_df.groupby('genome_id')))
 
-    logger.info('Writing merge csv ...')
-    merged_features_df.to_csv(os.path.join(kwargs['--output_path'], 'merged_defense_systems_prediction.csv'), index=False, sep=',')
+    if kwargs['--sample_input'] and len(jobs) > int(kwargs['--sample_input']):
+        jobs = random.sample(jobs, int(kwargs['--sample_input']))
 
-    # Read gbk file
-    logger.info('Starting reading the gbk file ...')
-    extract_cassettes_from_gbk(
-        gbk_file=kwargs['--gbk_file'],
-        defence_genes_locus_tags=sorted(merged_features_df.locus_tags.unique().tolist(), key=lambda x: int(x.split('_')[1])), # this must be sorted
-        n_genes=int(kwargs['--n_genes']),
-        output_path=kwargs['--output_path'],
-    )
+    logger.info('Starting {} parallel jobs with {} threads'.format(len(jobs), kwargs['--threads']))
+    with Pool(processes=int(kwargs['--threads'])) as p:
+        _ = p.starmap(extract_cassettes_from_gbk_part, jobs)
 
     logger.info('Finished all jobs !')
-
-
-
-
-
 
 if __name__ == '__main__':
     main(**docopt(__doc__))

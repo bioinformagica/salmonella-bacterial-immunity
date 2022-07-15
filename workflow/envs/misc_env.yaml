@@ -43,4 +43,5 @@ dependencies:
   - pip:
     - biopython==1.79
     - docopt==0.6.2
+    - tqdm==4.64.0
 prefix: /home/hugo/miniconda3/envs/misc_env
