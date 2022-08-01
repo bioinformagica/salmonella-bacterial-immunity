@@ -1,115 +1,169 @@
 #!/usr/bin/env python3
+# Imports
 # native
-from collections import defaultdict
-from collections import Counter
-from itertools import repeat
-from operator import itemgetter
+import os
 import sys
+import re
+from collections import Counter
+import multiprocessing
 
 # external
-import pandas as pd
 import numpy as np
-# import seaborn as sns
-# import matplotlib.pyplot as plt
+import modin.pandas as pd
+from modin.config import Engine
+Engine.put("ray")
 
-def get_percentage_of_member_count(df):
-    results = []
-    for total, count_dict in df.loc[:,['members_count', 'members_names']].values.tolist():
-        record = []
-        for name, count in count_dict.items():
-            record.append('{}:{}%'.format(name, round((count/total) * 100, 2)))
-        results.append(','.join(record))
-    return results
+os.environ["MODIN_CPUS"] = str(int(multiprocessing.cpu_count() * 0.75))
 
-def get_bait_distances(main_df):
-    temp = []
-    for i, df in main_df.query('casset_id.notna()').groupby(['contig_id', 'casset_id']):
-        try:
-            if i[0] == '2052597.6_10':
-                temp.append(df.assign(closest_bait_distance = lambda df: df.start.apply(lambda query_start: min(map(
-                     lambda bait_start: abs(query_start - bait_start),
-                     df.query('dfs_prediction == dfs_prediction').start.values.tolist()
-                )))))
-        except:
-            pass
-    return pd.concat(
-        map(
-            lambda gdf: pd.DataFrame(
-                data=[(gdf[0], gdf[1].closest_bait_distance.mean(),  gdf[1].closest_bait_distance.std(), gdf[1].closest_bait_distance.std()/gdf[1].closest_bait_distance.mean())],
-                columns=('seeds', 'mean_closest_bait_distance', 'std_closest_bait_distance', 'cv_closest_bait_distance')
-            ),
-            pd.concat(temp)[['seeds', 'closest_bait_distance']].groupby('seeds')
-        )
-    )
-
-def read_prokka(prokka_gff, seeds_with_close_dfs, casset_info):
-    return (pd.read_csv(prokka_gff, sep='\t', header=None)
-            .rename(columns=dict(zip(range(7), ['contig_id', 'locus_tag', 'start', 'end', 'strand', 'info', 'dfs_prediction'])))
-            .merge(
-                pd.read_csv(seeds_with_close_dfs, header=None, sep='\t').rename(columns=dict(zip(range(2), ['seeds', 'members']))),
-                left_on=['locus_tag'],
-                right_on=['members'],
-                how='left'
-            )
-            .drop('members', axis=1)
-            .assign(contig = lambda df: df.contig_id.apply(lambda x: x.split('_')[0]))
-            .assign(contig_order = lambda df: df.contig_id.apply(lambda x: int(x.split('_')[1])))
-            .sort_values(['contig', 'contig_order', 'start', 'end'])
-            .drop(['contig', 'contig_order'], axis=1)
-            .merge(
-                (pd.read_csv(casset_info, sep='\t', header=None)[1]
-                    .str.split(':', expand=True)
-                    .iloc[:,[1,4]]
-                    .sort_values(4)
-                    .rename(columns={ 1 :'casset_id', 4 :'locus_tag'})),
-                on=['locus_tag'],
-                how='left'
-            )
-            )
 
 def eprint(*args):
     print(*args, file=sys.stderr)
 
-def main(prokka_gff, seeds_with_close_dfs, casset_info, output_fname):
-    eprint('Starting ...')
-    eprint('Reading prokka annotation and dfs prediction ...')
-    prokka_annotation_with_dfs_prediction_df = read_prokka(prokka_gff, seeds_with_close_dfs, casset_info)
+def get_sequential_groups(vals: iter) -> list:
+    """ This functions take as input a SORTED iterables with UNIQUE values
+        and returns a list with all groups that are sequential labaled by a
+        interger index.
+        Ex:
+        $ get_sequential_groups([1528, 1529, 1530, 1531, 1559, 1560, 1561, 1562, 1565, 1566])
+        [1, 1, 1, 1, 2, 2, 2, 2, 3, 3]
+    """
+    groups_index = 1
+    groups = []
+    stack = []
+    for i in vals:
 
-    eprint('Finished table read.')
-    eprint('Calculation metrics ...')
-    (prokka_annotation_with_dfs_prediction_df
-     .loc[:,['seeds']]
-     .drop_duplicates()
-     .reset_index(drop=True)
-     .assign(members_count = lambda df: df.seeds.apply(lambda seed: prokka_annotation_with_dfs_prediction_df.query('seeds == @seed').shape[0]))
-     .assign(members_names = lambda df: df.seeds.apply(
-         lambda seed: Counter(prokka_annotation_with_dfs_prediction_df.query('seeds == @seed')['info'].apply(
-             lambda info: dict(map(lambda x: x.split('='), info.split(';'))).get('Name', 'Hypothetical Protein')
-         ).values.tolist())
-     ))
-     .assign(members_names = lambda df: get_percentage_of_member_count(df))
-     .assign(icity = lambda df: df.seeds.apply(
-         lambda seed: prokka_annotation_with_dfs_prediction_df.query('seeds == @seed').assign(icity = lambda df1: df1.casset_id.dropna().shape[0]/df1.casset_id.shape[0]).icity.values.tolist()[0]
-     ))
-     .assign(members_close_to_baits = lambda df: df.seeds.apply(
-         lambda seed: prokka_annotation_with_dfs_prediction_df.query('seeds == @seed').casset_id.dropna().shape[0]
-     ))
-     .merge(
-         get_bait_distances(prokka_annotation_with_dfs_prediction_df),
-         on='seeds',
-         how='left'
-     )
-     .assign(diversity_of_close_systems = lambda df: df.seeds.apply(lambda seed: Counter(prokka_annotation_with_dfs_prediction_df.query('seeds == @seed and casset_id.notna()')[['contig_id', 'casset_id']]
-                                                                                         .merge(
-                                                                                             prokka_annotation_with_dfs_prediction_df.query('casset_id.notna()')[['contig_id','casset_id', 'dfs_prediction']].dropna(),
-                                                                                             on=['contig_id','casset_id'],
-                                                                                             how='inner').dfs_prediction.values.tolist())))
-     .assign(diversity_score = lambda df: df.diversity_of_close_systems.apply(lambda x: sum(x.values())))
-     .assign(all_dfs = prokka_annotation_with_dfs_prediction_df.dfs_prediction.dropna().shape[0])
-     .assign(diversity_score = lambda df: tuple(map(lambda tup: tup[0]/tup[1], zip(df.diversity_score.values.tolist(), df.all_dfs.values.tolist()))))
-     .assign(diversity_of_close_systems = lambda df: df.diversity_of_close_systems.apply(lambda x: str(dict(x))).replace('{}', np.nan))
-     .drop('all_dfs', axis=1)
-     ).fillna('NA').to_csv(output_fname, index=False, sep='\t')
+        if not stack:
+            stack.append(i)
+            groups.append(groups_index)
+            continue
+
+        if i == stack[-1] + 1:
+            stack.append(i)
+            groups.append(groups_index)
+
+        else:
+            groups_index += 1
+            groups.append(groups_index)
+            stack = [i]
+
+    return groups
+
+
+def check_neighborhood(all_items: iter, range_to_check: int = 10) -> list:
+    if not any(all_items):
+        for i in all_items:
+            yield None
+        return
+
+    all_indexes = tuple(enumerate(all_items))
+    baits_location = sorted(set(i for i, x in all_indexes if x))
+
+    for indx, _ in all_indexes:
+
+        if indx in baits_location:
+            yield 'is_bait'
+            continue
+
+        if min(map(lambda x: abs(indx - x), baits_location)) <= range_to_check:
+            yield 'is_close'
+            continue
+
+        yield None
+
+
+def get_distance_from_baits(df) -> tuple:
+    bait_coords = set(df.query('bait_assign == "is_bait"').start.values.tolist())
+
+    for start_coord, bait_assign in df.values.tolist():
+        if not bait_assign:
+            yield None
+            continue
+
+        if start_coord in bait_coords:
+            yield 0
+            continue
+
+        yield min(map(lambda x: abs(start_coord - x), bait_coords))
+
+def get_name_percentage(info_list):
+    total_info = len(info_list)
+    name_counts = Counter(re.findall('(?<=Name\=).+?(?=\;)' ,';'.join(info_list)))
+    total_count = sum(name_counts.values())
+
+    results = []
+    for name, count in name_counts.items():
+        results.append('{}={}%'.format(name, round((count/total_info)*100, 2)))
+
+    if not total_count == total_info:
+        results.append('Hypothetical protein={}%'.format(round(((total_info - total_count)/total_info)*100, 2)))
+
+    return ';'.join(results)
+
+
+def get_name_systems(info_list):
+    name_counts = Counter(re.findall('(?<=system\=).+?(?=\;)' ,';'.join(info_list)))
+
+    results = []
+    for name, count in name_counts.items():
+        results.append('{}'.format(name))
+
+    return ';'.join(results)
+
+
+def main(all_cds_location, dfs_prediction, cluster_file, output_fname):
+    eprint('Reading prokka and dfs prediction ...')
+    cds_df = (pd.read_csv(all_cds_location, header=None, sep='\t')
+              .rename(columns = dict(zip(range(6), ['locus_tag', 'contig_id', 'start', 'end', 'strand', 'info'])))
+              .assign(contig_index = lambda df: df.contig_id.apply(lambda contig_id: int(contig_id.split('_')[1])))
+              .sort_values(['contig_id', 'contig_index', 'start'])
+              .drop('contig_index', axis=1)
+              .merge(
+                  pd.read_csv(dfs_prediction, header=None, sep=' ').rename(columns={0: 'locus_tag', 1: 'dfs_prediction'}),
+                  on=['locus_tag'],
+                  how='left'
+              )
+              .merge(
+                  pd.read_csv(cluster_file, header=None, sep='\t').rename(columns={0: 'seeds', 1: 'locus_tag'}),
+                  on=['locus_tag'],
+                  how='inner'
+              )
+              .groupby('contig_id', as_index=False)
+              .apply(lambda gdf: (gdf
+                                  .assign(bait_assign = lambda x: tuple(check_neighborhood(x.dfs_prediction.fillna(0).values)))
+                                  .assign(distance_to_bait = lambda x: tuple(get_distance_from_baits(x.loc[:, ['start', 'bait_assign']])))
+                                  ))
+              )
+
+    eprint('Calculating metrics ...')
+    seeds_df = (cds_df.groupby('seeds')
+                .agg({
+                    'seeds'           : 'count',
+                    'bait_assign'     : [
+                        lambda x: x.dropna().shape[0],
+                        lambda x: x.where(lambda x: x == 'is_bait').dropna().shape[0]
+                    ],
+                    'locus_tag'       : lambda x: ','.join(x.values.tolist()),
+                    'distance_to_bait': 'mean',
+                    'info'            : lambda x: get_name_percentage(x.values),
+                    'dfs_prediction'  : lambda x: get_name_systems(x.fillna('NA'))
+                })
+                .droplevel(0, axis=1))
+
+    seeds_df.columns = ['members_count', 'members_close_to_baits', 'dfs_count', 'locus_tags', 'mean_distance_to_bait', 'members_names', 'dfs_names']
+
+    seeds_df = (seeds_df
+                .query('members_close_to_baits > 0')
+                .assign(icity = lambda df: df.members_close_to_baits / df.members_count)
+                .sort_values('mean_distance_to_bait', ascending=False)
+                .assign(diversity_score = lambda df: df.dfs_count / df.dfs_count.sum())
+                [['members_count', 'icity', 'diversity_score', 'mean_distance_to_bait', 'members_close_to_baits', 'dfs_count', 'locus_tags', 'members_names', 'dfs_names']]
+                .assign(is_known = lambda df: df.members_count == df.dfs_count)
+                .sort_values(['icity', 'diversity_score', 'mean_distance_to_bait'], ascending=[False, False, True])
+                [['members_count', 'icity', 'diversity_score', 'mean_distance_to_bait', 'members_close_to_baits', 'locus_tags', 'members_names', 'dfs_names', 'is_known']]
+                .reset_index()
+                )
+
+    seeds_df.to_csv(output_fname, sep='\t', index=False)
 
     eprint('All jobs finished !')
 
