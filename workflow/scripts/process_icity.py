@@ -13,7 +13,7 @@ import modin.pandas as pd
 from modin.config import Engine
 Engine.put("ray")
 
-os.environ["MODIN_CPUS"] = str(int(multiprocessing.cpu_count() * 0.75))
+os.environ["MODIN_CPUS"] = str(int(multiprocessing.cpu_count() * 0.80))
 
 
 def eprint(*args):
@@ -101,14 +101,17 @@ def get_name_percentage(info_list):
 
 
 def get_name_systems(info_list):
-    name_counts = Counter(re.findall('(?<=system\=).+?(?=\;)' ,';'.join(info_list)))
+    name_counts = Counter(re.findall('(?<=system\=).+?(?=\;)', ';'.join(info_list)))
 
     results = []
+
+    if not name_counts:
+        return None
+
     for name, count in name_counts.items():
         results.append('{}'.format(name))
 
     return ';'.join(results)
-
 
 def main(all_cds_location, dfs_prediction, cluster_file, output_fname):
     eprint('Reading prokka and dfs prediction ...')
@@ -148,22 +151,20 @@ def main(all_cds_location, dfs_prediction, cluster_file, output_fname):
                     'dfs_prediction'  : lambda x: get_name_systems(x.fillna('NA'))
                 })
                 .droplevel(0, axis=1))
-
-    seeds_df.columns = ['members_count', 'members_close_to_baits', 'dfs_count', 'locus_tags', 'mean_distance_to_bait', 'members_names', 'dfs_names']
+    seeds_df.columns = ['members_count', 'members_close_to_baits', 'is_bait_count', 'locus_tags', 'mean_distance_to_bait', 'members_names', 'dfs_names']
 
     seeds_df = (seeds_df
                 .query('members_close_to_baits > 0')
                 .assign(icity = lambda df: df.members_close_to_baits / df.members_count)
                 .sort_values('mean_distance_to_bait', ascending=False)
-                .assign(diversity_score = lambda df: df.dfs_count / df.dfs_count.sum())
-                [['members_count', 'icity', 'diversity_score', 'mean_distance_to_bait', 'members_close_to_baits', 'dfs_count', 'locus_tags', 'members_names', 'dfs_names']]
-                .assign(is_known = lambda df: df.members_count == df.dfs_count)
-                .sort_values(['icity', 'diversity_score', 'mean_distance_to_bait'], ascending=[False, False, True])
-                [['members_count', 'icity', 'diversity_score', 'mean_distance_to_bait', 'members_close_to_baits', 'locus_tags', 'members_names', 'dfs_names', 'is_known']]
-                .reset_index()
-                )
+                .assign(diversity_score = lambda df: df.is_bait_count / df.is_bait_count.sum())
+                [['members_count', 'icity', 'diversity_score', 'mean_distance_to_bait', 'members_close_to_baits', 'is_bait_count', 'locus_tags', 'members_names', 'dfs_names']]
+                .assign(is_bait_perc = lambda df: df.is_bait_count / df.members_count)
+                [['members_count', 'icity', 'diversity_score', 'mean_distance_to_bait', 'members_close_to_baits', 'locus_tags', 'members_names', 'is_bait_count', 'is_bait_perc', 'dfs_names']]
+                .reset_index())
 
-    seeds_df.to_csv(output_fname, sep='\t', index=False)
+
+    seeds_df.fillna('NA').to_csv(output_fname, sep='\t', index=False)
 
     eprint('All jobs finished !')
 
